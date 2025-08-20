@@ -3,11 +3,11 @@ This is a stock analysis dashboard that can extract and calculate many data poin
 **What technologies are used for this project?**
 This project is built with:
 
->Vite
->TypeScript
->React
->Python
->shadcn-ui
->Tailwind CSS
+Vite
+TypeScript
+React
+Python
+shadcn-ui
+Tailwind CSS
 
 
