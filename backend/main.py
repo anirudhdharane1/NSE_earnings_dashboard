@@ -20,7 +20,7 @@ app = FastAPI(title="NSE Earnings Analytics API", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=["http://localhost:8080", "http://[::]:8080"],  # Frontend runs on port 8080
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,8 +1,8 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { BarChart3 } from "lucide-react";
 
+// Props interface: What comes from Dashboard.tsx (simple, as expected)
 interface ChartDisplayProps {
   data: Array<{
     date: string;
@@ -12,25 +12,67 @@ interface ChartDisplayProps {
   ticker: string;
 }
 
+// Internal type for chartData (adds rawMove, fill for tooltip and styling)
+interface ChartDataItem {
+  date: string;
+  move: number;
+  rawMove: number;
+  fill: string;
+}
+
 export function ChartDisplay({ data, ticker }: ChartDisplayProps) {
-  const chartData = data.map(item => ({
+  // Filter out invalid/zero moves and bad dates
+  const validData = data.filter(item =>
+    item.move !== undefined &&
+    item.move !== null &&
+    item.move !== 0 &&
+    item.date &&
+    !isNaN(new Date(item.date).getTime())
+  );
+
+  if (validData.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2" style={{ color: "#e3e3e3" }}>
+            <BarChart3 className="w-5 h-5" />
+            Price Movement Distribution - {ticker}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-[300px] text-muted-foreground">
+          No valid price movement data available for charts. Try analyzing recent earnings dates.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // === CHANGES START HERE ===
+  // 1) Sort chartData so earliest left, latest right (ascending).
+  // 2) Use darker green/red colors.
+  // 3) Change Y-axis tick interval to 1.
+  const sortedValidData = [...validData].sort((a, b) =>
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  const chartData: ChartDataItem[] = sortedValidData.map(item => ({
     date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
     move: Math.abs(item.move),
     rawMove: item.move,
-    fill: "#00FF00", // Green for all bars
+    // DARK colors: green "#16a34a" (emerald-700), red "#dc2626" (red-600)
+    fill: item.move >= 0 ? "#00FF00" : "#fd1414ff",
   }));
 
-  // For dynamic yAxis ticks at 0.5% intervals
+  // Dynamic yAxis ticks at 1% intervals (ABSOLUTE values)
   const moves = chartData.map(item => item.move);
-  const minMove = Math.floor(Math.min(...moves) * 2) / 2;
-  const maxMove = Math.ceil(Math.max(...moves) * 2) / 2;
+  const minMove = Math.max(0, Math.floor(Math.min(...moves)));
+  const maxMove = Math.ceil(Math.max(...moves));
   const yTicks: number[] = [];
   for (let i = minMove; i <= maxMove; i += 1) {
-    yTicks.push(Number(i.toFixed(2)));
+    yTicks.push(Number(i.toFixed(1)));
   }
 
   return (
-    <Card>
+    <Card className="card-green-shadow">
       <CardHeader>
         <CardTitle className="flex items-center gap-2" style={{ color: "#e3e3e3" }}>
           <BarChart3 className="w-5 h-5" />
@@ -56,22 +98,21 @@ export function ChartDisplay({ data, ticker }: ChartDisplayProps) {
               }}
             />
             <YAxis
-            tick={{ fontSize: 14, fill: "#e3e3e3" }}
-            ticks={yTicks}
-            domain={[minMove, maxMove]}
-            allowDecimals={true}
-            interval={0}
-            label={{
-            value: "Price Change (%)",
-            angle: -90,
-            position: "insideLeft",
-            offset: 15, // farther from axis (experiment 30-40)
-            dy: 90,     // lower down towards vertical center (experiment 90-120)
-            fill: "#e3e3e3",
-            fontSize: 16,
-    }}
-    />
-
+              tick={{ fontSize: 14, fill: "#e3e3e3" }}
+              ticks={yTicks}
+              domain={[minMove, maxMove]}
+              interval={0}
+              allowDecimals={true}
+              label={{
+                value: "Absolute Price Change (%)",
+                angle: -90,
+                position: "insideLeft",
+                offset: 15,
+                dy: 90,
+                fill: "#e3e3e3",
+                fontSize: 16,
+              }}
+            />
             <Tooltip
               formatter={(value: any, name: any, props: any) => [
                 `${props.payload.rawMove > 0 ? '+' : ''}${props.payload.rawMove.toFixed(1)}%`,
@@ -85,9 +126,13 @@ export function ChartDisplay({ data, ticker }: ChartDisplayProps) {
               }}
               itemStyle={{ color: "#e3e3e3", fontSize: "14px" }}
               labelStyle={{ color: "#e3e3e3", fontSize: "14px" }}
-              cursor={{ fill: "rgba(0,255,0,0.1)" }}
+              cursor={{ fill: "rgba(22,163,74,0.18)" /* faint green for hover */ }}
             />
-            <Bar dataKey="move" fill="#00FF00" />
+            <Bar dataKey="move">
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
         <p className="text-sm mt-4" style={{ color: "#ffffffc4" }}>

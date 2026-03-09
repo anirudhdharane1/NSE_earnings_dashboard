@@ -1,4 +1,6 @@
 
+#python -m uvicorn app:app --reload
+#npm run dev
 
 #Latest
 import yfinance as yf
@@ -6,6 +8,142 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta, datetime
 import matplotlib.pyplot as plt
+
+import NseUtility
+
+nse = NseUtility.NseUtils()
+
+def fetch_ohlc_for_date(ticker, date):
+    """Fetch OHLC data for a given ticker and date."""
+    data = yf.download(ticker, start=date.strftime('%Y-%m-%d'),
+                       end=(date + timedelta(days=1)).strftime('%Y-%m-%d'),
+                       auto_adjust=False)
+    if data.empty:
+        return None
+    return data.iloc[0]
+
+'''
+def adjust_dates_to_previous_day(datetime_tuples):
+    """Adjust earnings report dates (date/time tuples) to previous trading day."""
+    adjusted_dates = []
+    for date_str, time_str in datetime_tuples:
+        full_str = f"{date_str} {time_str}:00"
+        cleaned_str = full_str.replace(',:', ':').replace(',,', ',').strip()
+        try:
+            date = datetime.strptime(cleaned_str, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            print(f"Skipping invalid datetime format: {cleaned_str}")
+            continue
+        date = datetime.strptime(full_str, '%Y-%m-%d %H:%M:%S')
+        date -= timedelta(days=1)  # decrement by one day
+        if date.weekday() == 6:  # If Sunday, move to Friday
+            date -= timedelta(days=2)
+        adjusted_dates.append(date)
+    return adjusted_dates'''
+
+def adjust_dates_to_previous_day(datetime_tuples):
+    """Adjust earnings report dates (date/time tuples) to previous trading day."""
+    adjusted_dates = []
+    for date_str, time_str in datetime_tuples:
+        full_str = f"{date_str} {time_str}:00"
+
+        # Clean problematic characters before parsing
+        cleaned_str = full_str.replace(',:', ':').replace(',,', ',').strip()
+
+        try:
+            date = datetime.strptime(cleaned_str, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            print(f"Skipping invalid datetime format: {cleaned_str}")
+            continue
+
+        date -= timedelta(days=1)  # decrement by one day
+        if date.weekday() == 6:  # Sunday adjustment to Friday
+            date -= timedelta(days=2)
+        adjusted_dates.append(date)
+    return adjusted_dates
+
+
+def get_atm_option_prices_and_implied_move(ticker, trade_date):
+    """Retrieve ATM call/put prices and calculate implied move for a given trade date."""
+
+    try:
+        if trade_date.year < 2024:
+            return None, None, None
+
+        formatted_date = trade_date.strftime('%d-%m-%Y')
+        fno_df = nse.fno_bhav_copy(formatted_date)
+
+        options = fno_df[(fno_df['TckrSymb'] == ticker) & (fno_df['FinInstrmTp'] == 'STO')]
+        if options.empty:
+            return None, None, None
+
+        expiry_dates = pd.to_datetime(options['XpryDt'], format='%Y-%m-%d')
+        closest_expiry = expiry_dates[expiry_dates >= trade_date].min()
+        if pd.isnull(closest_expiry):
+            return None, None, None
+
+        options_expiry = options[options['XpryDt'] == closest_expiry.strftime('%Y-%m-%d')]
+        if options_expiry.empty:
+            return None, None, None
+
+        underlying_price = options_expiry['UndrlygPric'].iloc[0]
+        atm_strike = options_expiry.iloc[(options_expiry['StrkPric'] - underlying_price).abs().argsort()]['StrkPric'].values[0]
+
+        atm_call = options_expiry[(options_expiry['StrkPric'] == atm_strike) & (options_expiry['OptnTp'] == 'CE')]
+        atm_put = options_expiry[(options_expiry['StrkPric'] == atm_strike) & (options_expiry['OptnTp'] == 'PE')]
+        if atm_call.empty or atm_put.empty:
+            return None, None, None
+
+        atm_call_price = atm_call['ClsPric'].iloc[0]
+        atm_put_price = atm_put['ClsPric'].iloc[0]
+
+        fut_data = fno_df[(fno_df['TckrSymb'] == ticker) & (fno_df['FinInstrmTp'] == 'FUT')]
+        if not fut_data.empty:
+            underlying_close = fut_data['ClsPric'].iloc[0]
+        else:
+            underlying_close = underlying_price
+
+        if not underlying_close or underlying_close == 0:
+            implied_move = None
+        else:
+            implied_move = (atm_call_price + atm_put_price) / underlying_close * 100
+
+        return atm_call_price, atm_put_price, implied_move
+    
+    except (KeyError, Exception) as e:
+        # Handle missing columns or any other errors by returning None
+        print(f"Warning: Could not calculate implied move for {ticker} on {trade_date}: {str(e)}")
+        return None, None, None
+
+def get_ohlc_and_pct_change_with_implied_move(ticker, datetime_tuples):
+    """Calculate stock open/close pct change with implied move info for previous trading day dates."""
+    nse_ticker = f"{ticker}.NS"
+    adjusted_dates = adjust_dates_to_previous_day(datetime_tuples)
+    implied_moves = []
+
+    for idx, date in enumerate(adjusted_dates):
+        ohlc = fetch_ohlc_for_date(nse_ticker, date)
+        while ohlc is None:
+            date -= timedelta(days=1)
+            if date.weekday() == 6:
+                date -= timedelta(days=2)
+            ohlc = fetch_ohlc_for_date(nse_ticker, date)
+
+        open_price = float(ohlc['Open'].iloc[0]) if hasattr(ohlc['Open'], 'iloc') else float(ohlc['Open'])
+        close_price = float(ohlc['Close'].iloc[0]) if hasattr(ohlc['Close'], 'iloc') else float(ohlc['Close'])
+        pct_change = ((close_price - open_price) / open_price) * 100
+
+        atm_call_price, atm_put_price, implied_move = get_atm_option_prices_and_implied_move(ticker, date)
+
+        implied_moves.append({
+            'Date': datetime_tuples[idx][0],
+            'Implied Move (%)': implied_move
+        })
+
+    df_implied_move = pd.DataFrame(implied_moves)
+    df_implied_move['Implied Move (%)'] = df_implied_move['Implied Move (%)'].replace({np.nan: None})
+    print(df_implied_move.to_string(index=False))
+    return df_implied_move
 
 def extract_dates_times_from_text(text):
     # Pattern for 'DD MMM YYYY HH:MM', e.g. '18 Jul 2025 19:33'
@@ -159,7 +297,64 @@ def price_changes_for_dates(stock_symbol, dates_with_times, window_days=7, max_f
         for orig, adj in na_fallback_adjustments.items():
             print(f"N/A Fallback Adjustment: {orig} {adj}")
 
-    return results
+    df_results = pd.DataFrame(results, columns=['Date', 'Pct Change (%)', 'Open', 'High', 'Low', 'Close'])
+    return df_results
+
+def merge_dfs(df_results, df_implied_move, dates_with_times):
+    """
+    Merges the price reaction dataframe with the implied moves dataframe on 'Date'.
+    Ensures alignment with input dates and handles missing values.
+    
+    Args:
+        df_results: DataFrame from price_changes_for_dates (columns: Date, Pct Change (%), Open, High, Low, Close)
+        df_implied_move: DataFrame from get_ohlc_and_pct_change_with_implied_move (columns: Date, Implied Move (%))
+        dates_with_times: List of (date_str, time_str) tuples for original alignment
+    
+    Returns:
+        Merged DataFrame with all columns, indexed by input order.
+    """
+    import pandas as pd
+    from datetime import datetime
+    
+    # Ensure both DFs have 'Date' as index or column for merging
+    if 'Date' not in df_results.columns:
+        df_results['Date'] = pd.to_datetime([datetime.strptime(f"{date} {time}", '%Y-%m-%d %H:%M') for date, time in dates_with_times])
+        df_results = df_results.set_index('Date')
+    if 'Date' not in df_implied_move.columns:
+        df_implied_move['Date'] = pd.to_datetime([datetime.strptime(f"{date} {time}", '%Y-%m-%d %H:%M') for date, time in dates_with_times])
+        df_implied_move = df_implied_move.set_index('Date')
+    
+    # Merge on 'Date' with left join (keep all price data, add implied where available)
+    df_final = pd.merge(df_results, df_implied_move[['Date', 'Implied Move (%)']], on='Date', how='left')
+    
+    # Reset index to match input order (reverse if needed, as in original code)
+    df_final = df_final.iloc[::-1].reset_index(drop=True)
+    
+    # Convert Implied Move to numeric, fill NaN with NaN (for JSON handling)
+    df_final['Implied Move (%)'] = pd.to_numeric(df_final['Implied Move (%)'], errors='coerce')
+
+    df_final['Implied Move (%)'] = df_final['Implied Move (%)'].where(df_final['Implied Move (%)'].notna(), None)
+
+    # Full rename to simple keys (as before)
+    df_final = df_final.rename(columns={
+    'Date': 'date',
+    'Pct Change (%)': 'price_change_pct',
+    'Open': 'open',
+    'High': 'high',
+    'Low': 'low',
+    'Close': 'close',
+    'Implied Move (%)': 'implied_move'
+    })
+
+    df_final['date'] = pd.to_datetime(df_final['date']).dt.strftime('%Y-%m-%d')  # Clean date
+
+    df_final = df_final[['date', 'price_change_pct', 'open', 'high', 'low', 'close', 'implied_move']]  # Order
+
+    return df_final
+
+#  python -m uvicorn app:app --reload
+    
+
 
 # Example usage with your date-time pairs
 '''stock_symbol = "BPCL"  # Without .NS, as it's added in the function
@@ -183,97 +378,6 @@ dates_with_times = [
     ("2021-08-12", "15:30"),
     ("2021-05-26", "19:40"),
 ]
-
-
-price_changes = price_changes_for_dates(stock_symbol, dates_with_times)
-
-# Print results neatly with OHLC
-print("Date\t\tPrice Change (%)\tOpen\tHigh\tLow\tClose")
-for date, change, open_p, high_p, low_p, close_p in price_changes:
-    change_str = f"{change:.2f}" if change is not None else "N/A"
-    open_str = f"{open_p:.2f}" if open_p is not None else "N/A"
-    high_str = f"{high_p:.2f}" if high_p is not None else "N/A"
-    low_str = f"{low_p:.2f}" if low_p is not None else "N/A"
-    close_str = f"{close_p:.2f}" if close_p is not None else "N/A"
-    print(f"{date}\t{change_str}\t\t{open_str}\t{high_str}\t{low_str}\t{close_str}")
-
-# Calculate and display statistics on absolute price changes
-valid_changes = [change for _, change, _, _, _, _ in price_changes if change is not None]
-total_input_dates = len(dates_with_times)  # Number of input dates
-print(f"\nTotal input dates: {total_input_dates}")
-
-if valid_changes:
-    abs_changes = np.abs(valid_changes)
-    mean_abs = np.mean(abs_changes)
-    std_abs = np.std(abs_changes)
-    mean_plus_1sigma = mean_abs + std_abs
-    mean_plus_2sigma = mean_abs + (2 * std_abs)
-    mean_plus_3sigma = mean_abs + (3 * std_abs)
-
-    # Count how many absolute changes exceed thresholds
-    exceed_1sigma_count = np.sum(abs_changes > mean_plus_1sigma)
-    exceed_2sigma_count = np.sum(abs_changes > mean_plus_2sigma)
-
-    print("Statistics on Absolute Price Changes (%):")
-    print(f"Absolute Mean: {mean_abs:.2f}")
-    #\u03c3 --> sigma character
-    print(f"First Standard Deviation (1 sigma ): {mean_plus_1sigma:.2f}")
-    print(f"Second Standard Deviation (2 sigma): {mean_plus_2sigma:.2f}")
-    print(f"Third Standard Deviation (3 sigma): {mean_plus_3sigma:.2f}")
-    print(f"Number of occasions where absolute price change exceeded (mean + 1sigma): {exceed_1sigma_count}")
-    print(f"Number of occasions where absolute price change exceeded (mean + 2sigma): {exceed_2sigma_count}")
-else:
-    print("No valid price changes available for statistics calculation.")
-
-
-
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Assume price_changes is your existing list of tuples (date, change, open, high, low, close)
-percent_changes = [change for _, change, _, _, _, _ in price_changes if change is not None]
-
-# Define bins from -10% to +10%
-bins = list(range(-7, 8, 1))
-
-# Calculate absolute mean and std for standard deviation lines (optional)
-abs_changes = np.abs(percent_changes)
-mean_abs = np.mean(abs_changes)
-std_abs = np.std(abs_changes)
-
-plt.figure(figsize=(10, 6), facecolor='#2f2f2f')
-ax = plt.gca()
-ax.set_facecolor('#2f2f2f')
-
-# Plot histogram bars
-n, bins_edges, patches = plt.hist(percent_changes, bins=bins, edgecolor='black', color='#00FF00', alpha=1)
-
-# Calculate bin centers from edges for plotting line
-bin_centers = 0.5 * (bins_edges[:-1] + bins_edges[1:])
-
-# Overlay line connecting top of bars (peaks)
-
-# Add grid, labels, and title
-plt.grid(axis='y', color='lightgrey', linestyle='-', linewidth=0.7, alpha=0.5)
-plt.xticks(bins, color='white')
-plt.yticks(color='white')
-plt.xlabel('Percentage Price Change (%)', color='white')
-plt.ylabel('Frequency', color='white')
-plt.title('Distribution of Stock Price Changes After Earnings', color='white')
-
-# Vertical line at 0%
-plt.axvline(x=0, color='white', linestyle='-', linewidth=1, alpha=0.6)
-
-# Standard deviation markers (vertical lines)
-plt.axvline(x=mean_abs, color='yellow', linestyle='-', linewidth=1.5, label='1sigma', alpha=0.5)
-plt.axvline(x=-mean_abs, color='yellow', linestyle='-', linewidth=1.5, alpha=0.5)
-plt.axvline(x=2 * std_abs, color='orange', linestyle='-', linewidth=1.5, label='2sigma',alpha=0.5)
-plt.axvline(x=-2 * std_abs, color='orange', linestyle='-', linewidth=1.5, alpha=0.5)
-plt.axvline(x=3 * std_abs, color='red', linestyle='-', linewidth=1.5, label='3sigma', alpha=0.5)
-plt.axvline(x=-3 * std_abs, color='red', linestyle='-', linewidth=1.5, alpha=0.5)
-
-plt.legend()
-
-plt.show()'''
+'''
 
 

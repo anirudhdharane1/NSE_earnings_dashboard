@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 // import Sonner if needed
-import Dashboard from './components/Dashboard';
+import Dashboard from './components/Dashboard'; 
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient();
@@ -28,4 +28,3 @@ function App() {
 }
 
 export default App;
-

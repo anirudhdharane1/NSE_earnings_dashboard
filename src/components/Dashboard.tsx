@@ -1,7 +1,5 @@
-
-
 import { useState } from "react";
-import { TrendingUp, Download } from "lucide-react";
+import { TrendingUp, Download, Cherry, Vegan, RollerCoaster, Radical, PiSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,10 +39,10 @@ export default function Dashboard() {
   };
 
   const handleAnalysis = async () => {
-    if (!uploadedFile || uploadedFile.length === 0 || !ticker) {
+    if (!ticker) {
       toast({
         title: "Missing information",
-        description: "Please upload one or more images and enter a ticker symbol",
+        description: "Please enter a ticker symbol",
         variant: "destructive",
       });
       return;
@@ -53,22 +51,34 @@ export default function Dashboard() {
     setUploadError(null);
     try {
       const formData = new FormData();
-      uploadedFile.forEach(file => {
-        formData.append("images", file);
-      });
+      if (uploadedFile && uploadedFile.length > 0) {
+        uploadedFile.forEach(file => {
+          formData.append("images", file);
+        });
+      }
       formData.append("ticker", ticker);
       const response = await fetch("http://localhost:8000/analyze", {
         method: "POST",
         body: formData,
       });
       if (!response.ok) {
-        throw new Error(`Analysis failed: ${response.statusText}`);
+        let errorMessage = `Analysis failed: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData?.error) {
+            errorMessage = errorData.error;
+          }
+        } catch {
+          // Keep default status message when response body is not JSON.
+        }
+        throw new Error(errorMessage);
       }
       const data = await response.json();
       setAnalysisData(data);
+      const inputSourceText = data?.input_source === "opstra" ? "Opstra" : "OCR fallback";
       toast({
         title: "Analysis complete",
-        description: "Earnings impact analysis has been generated",
+        description: `Earnings impact analysis generated using ${inputSourceText}`,
       });
     } catch (error: any) {
       console.error("Analysis error:", error);
@@ -80,6 +90,45 @@ export default function Dashboard() {
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const toFixedOrZero = (value: number | null | undefined, digits = 2): string => {
+    if (value == null || Number.isNaN(value)) return (0).toFixed(digits);
+    return value.toFixed(digits);
+  };
+
+  const copyDetailsRow = async () => {
+    if (!analysisData?.stats) return;
+
+    const stats = analysisData.stats;
+
+    // Excel-friendly TSV row:
+    // (1) ticker, (2) blank, (3) avg abs move, (4) avg implied move,
+    // (5) 1st SD, (6) 2nd SD, (7) alpha
+    const row = [
+      ticker,
+      "",
+      toFixedOrZero(stats.absolute_mean),
+      toFixedOrZero(stats.average_implied_move),
+      toFixedOrZero(stats.first_std),
+      toFixedOrZero(stats.second_std),
+      toFixedOrZero(stats.alpha),
+    ].join("\t");
+
+    try {
+      await navigator.clipboard.writeText(row);
+      toast({
+        title: "Copied",
+        description: "Row copied. Paste into Excel (Ctrl+V).",
+      });
+    } catch (err) {
+      console.error("Copy failed:", err);
+      toast({
+        title: "Copy failed",
+        description: "Clipboard access was blocked by the browser.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -142,8 +191,8 @@ export default function Dashboard() {
         {/* Header */}
         <div className="text-center space-y-8 py-16">
           <h1 className="text-6xl font-bold text-foreground flex items-center justify-center gap-4">
-            <TrendingUp className="w-16 h-16 text-primary" />
-            NSE Earnings Dashboard
+            <PiSquare className="w-16 h-16 text-primary" />
+           PiNaccle Labs
           </h1>
           <p className="text-xl text-muted-foreground">
             Analyze historical earnings impact on stock price movements
@@ -151,7 +200,7 @@ export default function Dashboard() {
         </div>
         {/* Input Section */}
         <div className="grid md:grid-cols-2 gap-6">
-          <Card>
+          <Card className="card-green-shadow">
             <CardHeader>
               <CardTitle>Stock Symbol</CardTitle>
             </CardHeader>
@@ -169,22 +218,30 @@ export default function Dashboard() {
               </div>
               <Button
                 onClick={handleAnalysis}
-                disabled={isProcessing || !uploadedFile || uploadedFile.length === 0 || !ticker}
+                disabled={isProcessing || !ticker}
                 className="w-full"
               >
                 {isProcessing ? "Processing..." : "Run Analysis"}
               </Button>
+
+              <Button
+                type="button"
+                onClick={copyDetailsRow}
+                className="w-full"
+              >
+                Copy details
+              </Button>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="card-green-shadow">
             <CardHeader>
               <CardTitle>Upload Earnings Data</CardTitle>
             </CardHeader>
                <CardContent>
                 <p className="mb-4 text-sm text-muted-foreground">
-                You can source accurate dates of earnings releases of all NSE listed stocks at {" "}
+                Dates/times are fetched from Opstra by ticker first. Upload screenshots only as fallback if needed. You can source earnings dates at {" "}
                 <a
-                href="https://opstra.definedge.com/historical-results-timings"
+                href="https://opstra.definedge.com/results-calendar"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:text-primary"
@@ -212,8 +269,12 @@ export default function Dashboard() {
             <StatsCards data={analysisData.stats} ticker={ticker} />
             {/* Responsive results layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left column: Results Table */}
-              <ResultsTable data={analysisData.results} />
+              {/* Left column: Results Table — absolute so charts column sets row height */}
+              <div className="lg:relative min-h-[400px]">
+                <div className="lg:absolute lg:inset-0">
+                  <ResultsTable data={analysisData.results} />
+                </div>
+              </div>
               {/* Right column: ChartDisplay over HistogramChart */}
               <div className="flex flex-col gap-6">
                 <ChartDisplay

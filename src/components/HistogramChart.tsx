@@ -104,7 +104,7 @@ const yTicks = Array.from({ length: maxFreq + 2 }, (_, i) => i); // 0 to maxFreq
   );
 
   return (
-    <Card>
+    <Card className="card-green-shadow">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BarChart3 className="w-5 h-5" />

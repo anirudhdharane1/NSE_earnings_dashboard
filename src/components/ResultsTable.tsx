@@ -1,152 +1,95 @@
-/*import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Calendar } from "lucide-react";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { format } from "date-fns";  // For date formatting (optional, remove if not needed)
+
+interface ResultsRow {
+  date: string | null;
+  price_change_pct: number | null;
+  open: number | null;
+  close: number | null;
+  implied_move: number | null;
+}
 
 interface ResultsTableProps {
-  data: Array<{
-    date: string;
-    price_change_pct: number | null;
-    open: number | null;
-    high: number | null;
-    low: number | null;
-    close: number | null;
-  }>;
+  data: ResultsRow[];  // From analysisData.results (post-backend rename)
 }
 
 export function ResultsTable({ data }: ResultsTableProps) {
-  // Sort data by date descending before rendering
-  const sortedData = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  // Handle empty data
+  if (!data || data.length === 0) {
+    return (
+      <div className="rounded-md border p-4 text-center text-muted-foreground">
+        No results available. Run analysis to see earnings data.
+      </div>
+    );
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calendar className="w-5 h-5" />
-          Historical Earnings Moves
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
+    <div className="rounded-md border flex flex-col h-full">
+      <div className="overflow-auto flex-1 min-h-0 scrollbar-dark-blue">
+        <table className="w-full text-sm">
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead className="text-right">Price Change (%)</TableHead>
-              <TableHead className="text-right">Open</TableHead>
-              <TableHead className="text-right">High</TableHead>
-              <TableHead className="text-right">Low</TableHead>
-              <TableHead className="text-right">Close</TableHead>
+            <TableHead className="text-center">Date</TableHead>
+            <TableHead className="text-center">Open (₹)</TableHead>
+            <TableHead className="text-center">Close (₹)</TableHead>
+            <TableHead className="text-center">Pct Change (%)</TableHead>
+            <TableHead className="text-center">Implied Move (%)</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.map((item, index) => (
+            <TableRow key={index}>
+              {/* Date: Clean string from backend */}
+              <TableCell className="text-center">
+                {item.date
+                  ? format(new Date(item.date), 'MMM dd, yyyy')  // e.g., "Jan 01, 2023"
+                  : '-'
+                }
+              </TableCell>
+
+              {/* Open: 'open' key, safe .toFixed */}
+              <TableCell className="text-center">
+                {item.open !== null && item.open !== undefined
+                  ? `₹${item.open.toFixed(2)}`
+                  : '-'
+                }
+              </TableCell>
+
+              {/* Close: 'close' key */}
+              <TableCell className="text-center">
+                {item.close !== null && item.close !== undefined
+                  ? `₹${item.close.toFixed(2)}`
+                  : '-'
+                }
+              </TableCell>
+
+              {/* Pct Change: Safe access with color */}
+              <TableCell
+                className={`text-center ${
+                  item.price_change_pct && item.price_change_pct >= 0 
+                    ? 'text-green-600 font-medium' 
+                    : 'text-red-600 font-medium'
+                }`}
+              >
+                {item.price_change_pct !== null && item.price_change_pct !== undefined
+                  ? `${item.price_change_pct.toFixed(2)}%`
+                  : '-'
+                }
+              </TableCell >
+
+              {/* Implied Move: 'implied_move' */}
+              <TableCell className="text-center">
+                {item.implied_move !== null && item.implied_move !== undefined
+                  ? `${item.implied_move.toFixed(2)}%`
+                  : '-'
+                }
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedData.map((item, index) => (
-              <TableRow key={index}>
-                <TableCell className="font-medium">
-                  {new Date(item.date).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  {item.price_change_pct !== null ? (
-                    <span className={item.price_change_pct > 0 ? "text-green-600" : item.price_change_pct < 0 ? "text-red-600" : ""}>
-                      {item.price_change_pct > 0 ? "+" : ""}
-                      {item.price_change_pct.toFixed(2)}%
-                    </span>
-                  ) : "N/A"}
-                </TableCell>
-                <TableCell className="text-right">{item.open !== null ? item.open.toFixed(2) : "N/A"}</TableCell>
-                <TableCell className="text-right">{item.high !== null ? item.high.toFixed(2) : "N/A"}</TableCell>
-                <TableCell className="text-right">{item.low !== null ? item.low.toFixed(2) : "N/A"}</TableCell>
-                <TableCell className="text-right">{item.close !== null ? item.close.toFixed(2) : "N/A"}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          ))}
+        </TableBody>
+        </table>
+      </div>
+    </div>
   );
 }
-*/
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Calendar } from "lucide-react";
-
-interface ResultsTableProps {
-  data: Array<{
-    date: string;
-    price_change_pct: number | null;
-    open: number | null;
-    high: number | null;
-    low: number | null;
-    close: number | null;
-  }>;
-}
-
-export function ResultsTable({ data }: ResultsTableProps) {
-  const [showAll, setShowAll] = useState(false);
-
-  // Sort data by date descending (newest first)
-  const sortedData = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  // Data to display, either all rows or only first 18
-  const displayedData = showAll ? sortedData : sortedData.slice(0, 18);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calendar className="w-5 h-5" />
-          Historical Earnings Moves
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead className="text-right">Price Change (%)</TableHead>
-              <TableHead className="text-right">Open</TableHead>
-              <TableHead className="text-right">High</TableHead>
-              <TableHead className="text-right">Low</TableHead>
-              <TableHead className="text-right">Close</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {displayedData.map((item, index) => (
-              <TableRow key={index}>
-                <TableCell className="font-medium">
-                  {new Date(item.date).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  {item.price_change_pct !== null ? (
-                    <span className={
-                      item.price_change_pct > 0 ? "text-green-600" :
-                      item.price_change_pct < 0 ? "text-red-600" : ""
-                    }>
-                      {item.price_change_pct > 0 ? "+" : ""}
-                      {item.price_change_pct.toFixed(2)}%
-                    </span>
-                  ) : "N/A"}
-                </TableCell>
-                <TableCell className="text-right">{item.open !== null ? item.open.toFixed(2) : "N/A"}</TableCell>
-                <TableCell className="text-right">{item.high !== null ? item.high.toFixed(2) : "N/A"}</TableCell>
-                <TableCell className="text-right">{item.low !== null ? item.low.toFixed(2) : "N/A"}</TableCell>
-                <TableCell className="text-right">{item.close !== null ? item.close.toFixed(2) : "N/A"}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-
-        {sortedData.length > 18 && (
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => setShowAll(!showAll)}
-              className="text-primary hover:underline focus:outline-none"
-            >
-              {showAll ? "Show Less" : `Show More (${sortedData.length - 18} more)`}
-            </button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}

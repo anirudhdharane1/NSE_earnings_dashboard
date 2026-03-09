@@ -101,7 +101,9 @@ All colors MUST be HSL.
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
 }
+
 
 @layer base {
   * {
@@ -112,3 +114,35 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  /* This selector is more specific, so it will override default card styles */
+  .grid .card-green-shadow {
+    box-shadow: 0 0 15px hsl(var(--success) / 0.25);
+  }
+
+  /* Theme-matched scrollbar for the results table */
+  .scrollbar-dark-blue::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-dark-blue::-webkit-scrollbar-track {
+    background: hsl(220 26% 11%);
+    border-radius: 4px;
+  }
+  .scrollbar-dark-blue::-webkit-scrollbar-thumb {
+    background: hsl(220 26% 25%);
+    border-radius: 4px;
+  }
+  .scrollbar-dark-blue::-webkit-scrollbar-thumb:hover {
+    background: hsl(220 26% 32%);
+  }
+  /* Firefox */
+  .scrollbar-dark-blue {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(220 26% 25%) hsl(220 26% 11%);
+  }
+}
+
+
+
